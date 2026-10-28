@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Data & checkpoints (never commit large binaries)
+*.pt
+*.pth
+*.pkl
+*.npy
+*.safetensors
+data/
+results*/
+outputs/
+wandb/
+runs/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Logs
+*.log
+*.txt.bak
+
+# Internal code — not part of the public release
+/baselines/
+/eval/
+/process_data/
+
+# Paper PDF (root only)
+/*.pdf

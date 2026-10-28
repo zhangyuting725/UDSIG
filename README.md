@@ -13,8 +13,6 @@ train_pref_model.sh  →  train_refl_sdxl.sh  →  inference.sh
  (preference model)      (ReFL fine-tuning)     (generation)
 ```
 
-The evaluation scripts (Stage 4) are kept internal and are not part of this release.
-
 ---
 
 ## Project Structure
@@ -43,12 +41,28 @@ All data files should be placed under a dataset directory:
 | File | Description |
 |------|-------------|
 | `image_feat.pt` | Precomputed image feature tensor, shape `[item_num, feature_dim]` |
-| `image_path.pkl` | List of image file paths (length = `item_num`) |
-| `train.pkl` | Training interaction data: `{uids, iids, his_iids, ...}` |
-| `valid.pkl` | Validation interaction data: same format as train |
-| `test.pkl` | Test interaction data: same format as train |
-| `reward_model.pt` | Pretrained reward model weights (for evaluation stage) |
-| `<image_dir>/` | Directory containing item images referenced by `image_path.pkl` |
+| `image_path.pkl` | List of image file names (length = `item_num`), relative to `poster/` |
+| `movie_info.npy` | Per-item metadata dict keyed by item id; `movie_info[iid]['description']` is the text prompt |
+| `train.pkl` | Training interactions: a DataFrame with `userId` and `movie_seq` |
+| `valid.pkl` | Validation interactions: same format as train |
+| `test.pkl` | Test interactions: same format as train |
+| `near_images.npy` | Semantic neighbours per item, shape `[item_num, 100]` |
+| `near_images_sim.npy` | Cosine similarity of those neighbours, shape `[item_num, 100]` |
+| `poster/` | Directory containing the item images referenced by `image_path.pkl` |
+
+`near_images.npy` / `near_images_sim.npy` are built by `data_utils.get_top_k_similar_images()` during Stage 1 (CLIP text embeddings of `movie_info[*]['description']`, top-100 neighbours per item); if they already exist they are reused as-is.
+
+Stage 1 also writes `{save_folder}/DIN_model.pt`, which Stages 2 and 3 load as the preference / reward model — it is an output, not an input.
+
+### Data Sampling (training and inference)
+
+Every sample is built by `IPAdapterDataset` (`data_utils.py`) as follows:
+
+- **Target item** — drawn **uniformly at random from the whole catalogue** (`random.randint(0, item_num - 1)`), *not* from `data['iids']`. This is intentional data augmentation: the image-prompt target is decoupled from the interaction sequence, so the model cannot simply memorise (history → next item) pairs.
+- **Sparse history** — 1–3 interactions are randomly sub-sampled from the user's history (`k = random.randint(1, 3)`) to simulate sparse / cold-start users.
+- Training and inference share this dataset class with no train/eval branch, so the `(uid, iid)` pairs written to `all_res.npy` are these **randomly sampled pairs**, not fixed held-out pairs.
+
+To evaluate on fixed held-out pairs instead, restore `tgt_iid = self.data['iids'][idx]` in `data_utils.py`.
 
 ---
 
@@ -176,17 +190,6 @@ Loads the fine-tuned SDXL checkpoint and generates personalized images for each 
 **Output:**
 - `{save_folder}/{uid}/{iid}_generated.jpg` — generated images
 - `{save_folder}/all_res.npy` — dict mapping `uid → iid → {gen_image_path, his_iids, ...}`
-
----
-
-## Stage 4 — Evaluation (internal, not released)
-
-The evaluation code is kept internal and is not included in this release. For reference, it computes:
-
-- **Image quality metrics** — FID, CLIP Score, DINO Image Score, CLIP Image Score, Hist LPIPS, Hist DINO Image Score, SSIM, MS-SSIM between generated and ground-truth images.
-- **Reward-model ranking evaluation** — for each user-item pair, samples 99 negative items, scores all candidates (original + generated + negatives) with the reward model, and compares rank positions. Reported metrics: `Better rank rate`, `Avg original image rank`, `Avg generated image rank`, `Avg rank improvement` = mean of `(rank_ori - rank_gen) / (1 + num_negative_samples)`.
-
-Stage 3 writes `{save_folder}/all_res.npy`, which is the input to both evaluations.
 
 ---
 
